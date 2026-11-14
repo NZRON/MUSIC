@@ -24,7 +24,7 @@ const MULTI_LABEL_PUBLIC_SUFFIXES = [
   // 通配后缀
   "nip.io",
   "sslip.io",
-  "qzz.io",
+  "zvz.qzz.io",
 ];
 
 /**
