@@ -4,10 +4,10 @@ import {
 	getMusicPlay,
 	getQQLoginQr,
 	search,
-} from "@sansenjian/qq-music-api/sdk";
-import { getUserAvatar } from "@sansenjian/qq-music-api/services";
-import { txHeaders, txRequest, upgradeTxAudioUrl, zzcSign } from "./native_tx";
-import { inflateRawSync, inflateSync, unzipSync } from "node:zlib";
+} from '@sansenjian/qq-music-api/sdk';
+import { getUserAvatar } from '@sansenjian/qq-music-api/services';
+import { txHeaders, txRequest, upgradeTxAudioUrl, zzcSign } from './native_tx';
+import { inflateRawSync, inflateSync, unzipSync } from 'node:zlib';
 
 type QqSdkResponse = {
 	status: number;
@@ -15,73 +15,49 @@ type QqSdkResponse = {
 };
 
 const QQ_SDK_QUALITY_MAP: Record<string, string> = {
-	"4": "128",
-	"8": "320",
-	"10": "flac",
-	"11": "flac",
-	"14": "flac",
-	"128": "128",
-	"320": "320",
-	"128k": "128",
-	"320k": "320",
-	flac: "flac",
-	sq: "flac",
-	hires: "flac",
+	'4': '128',
+	'8': '320',
+	'10': 'flac',
+	'11': 'flac',
+	'14': 'flac',
+	'128': '128',
+	'320': '320',
+	'128k': '128',
+	'320k': '320',
+	flac: 'flac',
+	sq: 'flac',
+	hires: 'flac',
 };
 
-const QQ_AUTH_COOKIE_KEYS = ["qqmusic_key", "qm_keyst", "music_key"];
-const QQ_MUSICU_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
-const QQ_MUSICS_URL = "https://u.y.qq.com/cgi-bin/musics.fcg";
-const QQ_PLAY_GUID = "1429839143";
+const QQ_AUTH_COOKIE_KEYS = ['qqmusic_key', 'qm_keyst', 'music_key'];
+const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+const QQ_MUSICS_URL = 'https://u.y.qq.com/cgi-bin/musics.fcg';
+const QQ_PLAY_GUID = '1429839143';
 const QQ_COMMON_QUERY = {
-	g_tk: "1124214810",
-	hostUin: "0",
-	inCharset: "utf8",
-	outCharset: "utf-8",
-	notice: "0",
-	platform: "yqq.json",
-	needNewCode: "0",
+	g_tk: '1124214810',
+	hostUin: '0',
+	inCharset: 'utf8',
+	outCharset: 'utf-8',
+	notice: '0',
+	platform: 'yqq.json',
+	needNewCode: '0',
 };
 const QQ_OFFICIAL_HEADERS = {
-	"User-Agent":
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-	referer: "https://y.qq.com/portal/player.html",
-	host: "u.y.qq.com",
-	"content-type": "application/x-www-form-urlencoded",
+	'User-Agent':
+		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+	referer: 'https://y.qq.com/portal/player.html',
+	host: 'u.y.qq.com',
+	'content-type': 'application/x-www-form-urlencoded',
 };
 
 const QQ_PLAY_FILE_TYPE_MAP: Record<
 	string,
 	{ prefix: string; suffix: string }
 > = {
-	m4a: { prefix: "C400", suffix: ".m4a" },
-	"128": { prefix: "M500", suffix: ".mp3" },
-	"320": { prefix: "M800", suffix: ".mp3" },
-	flac: { prefix: "F000", suffix: ".flac" },
-};
-
-/**
- * 带重试机制的 fetch 请求封装，提升弱网环境下的稳定性
- */
-const fetchWithRetry = async (
-	url: string,
-	options: RequestInit,
-	retries = 2,
-	delay = 1000
-): Promise<Response> => {
-	try {
-		const response = await fetch(url, options);
-		if (!response.ok && response.status >= 500 && retries > 0) {
-			throw new Error(`Server HTTP error: ${response.status}`);
-		}
-		return response;
-	} catch (error) {
-		if (retries > 0) {
-			await new Promise((resolve) => setTimeout(resolve, delay));
-			return fetchWithRetry(url, options, retries - 1, delay * 2);
-		}
-		throw error;
-	}
+	m4a: { prefix: 'C400', suffix: '.m4a' },
+	'128': { prefix: 'M500', suffix: '.mp3' },
+	'320': { prefix: 'M800', suffix: '.mp3' },
+	flac: { prefix: 'F000', suffix: '.flac' },
 };
 
 const unwrapQqSdkResponse = (
@@ -102,8 +78,8 @@ const parseCookieObject = (cookie?: string) => {
 	const result: Record<string, string> = {};
 	if (!cookie) return result;
 
-	cookie.split(";").forEach((item) => {
-		const separatorIndex = item.indexOf("=");
+	cookie.split(';').forEach((item) => {
+		const separatorIndex = item.indexOf('=');
 		if (separatorIndex <= 0) return;
 
 		const key = item.slice(0, separatorIndex).trim();
@@ -118,7 +94,7 @@ const serializeCookieObject = (cookieObject: Record<string, string>) => {
 	return Object.entries(cookieObject)
 		.filter(([key, value]) => key && value)
 		.map(([key, value]) => `${key}=${value}`)
-		.join("; ");
+		.join('; ');
 };
 
 export const normalizeQqCookie = (cookie?: string) => {
@@ -144,25 +120,25 @@ export const getQqCookieDiagnostic = (cookie?: string) => {
 	return {
 		hasCookie: Boolean(normalizedCookie),
 		hasUin: Boolean(cookieObject.uin),
-		uinType: cookieObject.uin?.startsWith("o")
-			? "openid"
+		uinType: cookieObject.uin?.startsWith('o')
+			? 'openid'
 			: cookieObject.uin
-			? "uin"
-			: "missing",
+			? 'uin'
+			: 'missing',
 		hasAuthKey: authKeys.length > 0,
 		authKeySource: cookieObject.qm_keyst
-			? "qm_keyst"
+			? 'qm_keyst'
 			: cookieObject.music_key
-			? "music_key"
+			? 'music_key'
 			: cookieObject.qqmusic_key
-			? "qqmusic_key"
-			: "missing",
+			? 'qqmusic_key'
+			: 'missing',
 		authKeys,
 	};
 };
 
 const decodeMaybeBase64 = (value: unknown) => {
-	if (typeof value !== "string" || !value) return "";
+	if (typeof value !== 'string' || !value) return '';
 
 	const normalizedValue = value.trim();
 	if (
@@ -173,7 +149,7 @@ const decodeMaybeBase64 = (value: unknown) => {
 	}
 
 	try {
-		const decoded = Buffer.from(normalizedValue, "base64").toString();
+		const decoded = Buffer.from(normalizedValue, 'base64').toString();
 		if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/.test(decoded)) {
 			return value;
 		}
@@ -189,10 +165,10 @@ const decodeMaybeBase64 = (value: unknown) => {
 const isHttpAudioUrl = (value: string) => /^https?:\/\//i.test(value.trim());
 
 const findFirstUrl = (value: unknown): string => {
-	if (!value) return "";
+	if (!value) return '';
 
-	if (typeof value === "string") {
-		return isHttpAudioUrl(value) ? value : "";
+	if (typeof value === 'string') {
+		return isHttpAudioUrl(value) ? value : '';
 	}
 
 	if (Array.isArray(value)) {
@@ -200,12 +176,12 @@ const findFirstUrl = (value: unknown): string => {
 			const url = findFirstUrl(item);
 			if (url) return url;
 		}
-		return "";
+		return '';
 	}
 
-	if (typeof value === "object") {
+	if (typeof value === 'object') {
 		const record = value as Record<string, any>;
-		if (typeof record.url === "string" && isHttpAudioUrl(record.url)) {
+		if (typeof record.url === 'string' && isHttpAudioUrl(record.url)) {
 			return record.url;
 		}
 
@@ -215,7 +191,7 @@ const findFirstUrl = (value: unknown): string => {
 		}
 	}
 
-	return "";
+	return '';
 };
 
 const collectPlayUrlErrors = (value: unknown): string[] => {
@@ -225,10 +201,10 @@ const collectPlayUrlErrors = (value: unknown): string[] => {
 		return value.flatMap((item) => collectPlayUrlErrors(item));
 	}
 
-	if (typeof value === "object") {
+	if (typeof value === 'object') {
 		const record = value as Record<string, any>;
 		const currentError =
-			typeof record.error === "string" ? [record.error] : [];
+			typeof record.error === 'string' ? [record.error] : [];
 		return [
 			...currentError,
 			...Object.values(record).flatMap((item) =>
@@ -241,28 +217,28 @@ const collectPlayUrlErrors = (value: unknown): string[] => {
 };
 
 const normalizeQqSdkQuality = (quality: unknown) => {
-	const key = String(quality ?? "8").toLowerCase();
-	return QQ_SDK_QUALITY_MAP[key] || "320";
+	const key = String(quality ?? '8').toLowerCase();
+	return QQ_SDK_QUALITY_MAP[key] || '320';
 };
 
 const pickPlayableDomain = (sip: unknown) => {
-	if (!Array.isArray(sip)) return "";
+	if (!Array.isArray(sip)) return '';
 
 	const urls = sip.filter(
-		(item) => typeof item === "string" && item.length > 0
+		(item) => typeof item === 'string' && item.length > 0
 	);
 	return (
-		urls.find((url) => !url.startsWith("http://ws")) ||
-		urls.find((url) => url.startsWith("https://")) ||
+		urls.find((url) => !url.startsWith('http://ws')) ||
+		urls.find((url) => url.startsWith('https://')) ||
 		urls[0] ||
-		""
+		''
 	);
 };
 
 const joinUrl = (domain: string, path: string) => {
-	if (domain.endsWith("/") && path.startsWith("/"))
+	if (domain.endsWith('/') && path.startsWith('/'))
 		return `${domain}${path.slice(1)}`;
-	if (!domain.endsWith("/") && !path.startsWith("/"))
+	if (!domain.endsWith('/') && !path.startsWith('/'))
 		return `${domain}/${path}`;
 	return `${domain}${path}`;
 };
@@ -272,18 +248,18 @@ const buildQqOfficialPlayUrl = (
 	info: Record<string, any> | undefined,
 	guid: string
 ) => {
-	if (!domain || !info) return "";
+	if (!domain || !info) return '';
 	if (info.purl) return joinUrl(domain, info.purl);
 	if (info.vkey && info.filename) {
 		return `${joinUrl(domain, info.filename)}?vkey=${
 			info.vkey
 		}&guid=${guid}&fromtag=66`;
 	}
-	return "";
+	return '';
 };
 
 const resolveQqVkeyUin = (cookieObject: Record<string, string>) => {
-	return cookieObject.uin || "0";
+	return cookieObject.uin || '0';
 };
 
 const requestQqOfficialVkey = async (
@@ -292,40 +268,35 @@ const requestQqOfficialVkey = async (
 	useSignedRequest: boolean
 ) => {
 	const headers: Record<string, string> = useSignedRequest
-		? { ...txHeaders, "Content-Type": "application/json" }
+		? { ...txHeaders, 'Content-Type': 'application/json' }
 		: { ...QQ_OFFICIAL_HEADERS };
 	if (cookie) headers.Cookie = cookie;
 
 	if (useSignedRequest) {
 		const sign = await zzcSign(JSON.stringify(payload));
-		const response = await fetchWithRetry(
-			`${QQ_MUSICS_URL}?sign=${sign}`,
-			{
-				method: "POST",
-				headers,
-				body: JSON.stringify(payload),
-				signal: AbortSignal.timeout(6000),
-			}
-		);
+		const response = await fetch(`${QQ_MUSICS_URL}?sign=${sign}`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify(payload),
+			signal: AbortSignal.timeout(6000),
+		});
 		if (!response.ok)
 			throw new Error(`QQ Signed vkey HTTP ${response.status}`);
 		return await response.json();
 	}
 
+	// 普通请求：GET + query string
 	const query = new URLSearchParams({
 		...QQ_COMMON_QUERY,
-		loginUin: payload.loginUin || "0",
-		format: "json",
+		loginUin: payload.loginUin || '0',
+		format: 'json',
 		data: JSON.stringify(payload),
 	});
-	const response = await fetchWithRetry(
-		`${QQ_MUSICU_URL}?${query.toString()}`,
-		{
-			method: "GET",
-			headers,
-			signal: AbortSignal.timeout(6000),
-		}
-	);
+	const response = await fetch(`${QQ_MUSICU_URL}?${query.toString()}`, {
+		method: 'GET',
+		headers,
+		signal: AbortSignal.timeout(6000),
+	});
 	if (!response.ok) throw new Error(`QQ vkey HTTP ${response.status}`);
 	return await response.json();
 };
@@ -365,8 +336,8 @@ const createQqOfficialVkeyPayload = ({
 }) => {
 	return {
 		req_0: {
-			module: "vkey.GetVkeyServer",
-			method: "CgiGetVkey",
+			module: 'vkey.GetVkeyServer',
+			method: 'CgiGetVkey',
 			param: {
 				filename: [filename],
 				guid,
@@ -374,14 +345,14 @@ const createQqOfficialVkeyPayload = ({
 				songtype: [0],
 				uin,
 				loginflag: 1,
-				platform: "20",
+				platform: '20',
 				...(authst ? { authst } : {}),
 			},
 		},
 		loginUin: uin,
 		comm: {
 			uin,
-			format: "json",
+			format: 'json',
 			ct: 24,
 			cv: 0,
 		},
@@ -403,15 +374,15 @@ export const resolveQqOfficialPlayUrl = async ({
 	const cookieObject = parseCookieObject(normalizedCookie);
 	const qualityKey = normalizeQqSdkQuality(quality);
 	const fileType =
-		QQ_PLAY_FILE_TYPE_MAP[qualityKey] || QQ_PLAY_FILE_TYPE_MAP["320"];
-	const playableFileId = String(mediaId || songmid || "").trim();
-	const songmidValue = String(songmid || "").trim();
+		QQ_PLAY_FILE_TYPE_MAP[qualityKey] || QQ_PLAY_FILE_TYPE_MAP['320'];
+	const playableFileId = String(mediaId || songmid || '').trim();
+	const songmidValue = String(songmid || '').trim();
 
 	if (!songmidValue) {
-		throw new Error("QQ 官方接口缺少 songmid");
+		throw new Error('QQ 官方接口缺少 songmid');
 	}
 	if (!playableFileId) {
-		throw new Error("QQ 官方接口缺少播放文件 ID");
+		throw new Error('QQ 官方接口缺少播放文件 ID');
 	}
 
 	const guid = QQ_PLAY_GUID;
@@ -428,7 +399,6 @@ export const resolveQqOfficialPlayUrl = async ({
 	let url: string | undefined;
 	let info: Record<string, any> | undefined;
 
-	// 1. 尝试常规请求
 	try {
 		const normalResponse = await requestQqOfficialVkey(
 			payload,
@@ -443,15 +413,11 @@ export const resolveQqOfficialPlayUrl = async ({
 		url = parsed.url;
 		info = parsed.info;
 	} catch (normalErr) {
-		console.warn("[qq_music_sdk] 未签名请求异常:", normalErr);
+		console.warn('[qq_music_sdk] 未签名请求失败，尝试签名请求:', normalErr);
 	}
 
-	// 2. 如果常规请求没有获取到 url（包括网络失败或接口业务返回空），通过签名接口重试兜底
 	if (!url) {
 		try {
-			console.log(
-				"[qq_music_sdk] 未获取到有效播放链接，尝试通过签名接口抢救..."
-			);
 			const signedResponse = await requestQqOfficialVkey(
 				payload,
 				normalizedCookie,
@@ -465,17 +431,20 @@ export const resolveQqOfficialPlayUrl = async ({
 			url = signedResult.url || url;
 			info = signedResult.info || info;
 		} catch (signedErr) {
-			console.error("[qq_music_sdk] 签名请求兜底失败:", signedErr);
+			console.error(
+				'[qq_music_sdk] 签名请求也失败，保留已获取的诊断信息:',
+				signedErr
+			);
 		}
 	}
 
 	if (!url) {
 		const resultCode =
-			info?.result === undefined ? "missing" : String(info.result);
+			info?.result === undefined ? 'missing' : String(info.result);
 		const subcode =
-			info?.subcode === undefined ? "missing" : String(info.subcode);
-		const mid = info?.mid || "missing";
-		const tips = info?.tips ? `, tips=${String(info.tips)}` : "";
+			info?.subcode === undefined ? 'missing' : String(info.subcode);
+		const mid = info?.mid || 'missing';
+		const tips = info?.tips ? `, tips=${String(info.tips)}` : '';
 		throw new Error(
 			`QQ 官方接口未返回播放链接：filename=${filename}, result=${resultCode}, subcode=${subcode}, mid=${mid}, purl=${Boolean(
 				info?.purl
@@ -500,7 +469,7 @@ export const resolveQqSdkPlayUrl = async (
 			mediaId,
 			cookie: normalizedCookie,
 		}),
-		"qq-music-api 未返回播放链接"
+		'qq-music-api 未返回播放链接'
 	);
 
 	const data = body?.response || body?.data || body;
@@ -509,27 +478,27 @@ export const resolveQqSdkPlayUrl = async (
 		findFirstUrl(data?.playUrl?.[songmid]) ||
 		findFirstUrl(data?.playUrl);
 
-	if (!url || typeof url !== "string") {
+	if (!url || typeof url !== 'string') {
 		const errors = collectPlayUrlErrors(
 			data?.playUrl?.[songmid] || data?.playUrl
 		);
 		const diagnostic = getQqCookieDiagnostic(normalizedCookie);
 		const reason = errors.length
-			? `：${[...new Set(errors)].join("、")}`
-			: "";
+			? `：${[...new Set(errors)].join('、')}`
+			: '';
 		const authHint = diagnostic.hasCookie
 			? `（Cookie: uin=${
 					diagnostic.hasUin
 						? `present:${diagnostic.uinType}`
-						: "missing"
+						: 'missing'
 			  }, authKey=${
 					diagnostic.hasAuthKey
-						? `${diagnostic.authKeys.join("/")}, used=${
+						? `${diagnostic.authKeys.join('/')}, used=${
 								diagnostic.authKeySource
 						  }`
-						: "missing"
+						: 'missing'
 			  }）`
-			: "（未传 Cookie）";
+			: '（未传 Cookie）';
 		throw new Error(`qq-music-api 未返回播放链接${reason}${authHint}`);
 	}
 
@@ -553,18 +522,18 @@ export const resolveQqSdkLyric = async ({
 			isFormat: false,
 			cookie: normalizedCookie,
 		}),
-		"qq-music-api 未返回歌词"
+		'qq-music-api 未返回歌词'
 	);
 
 	const data = body.response || body.data || body;
 	const lrc =
-		typeof data?.lyric === "string"
+		typeof data?.lyric === 'string'
 			? data.lyric
 			: decodeMaybeBase64(data?.lrc);
 	const trans = decodeMaybeBase64(data?.trans);
 
 	if (!lrc) {
-		throw new Error("qq-music-api 未返回歌词");
+		throw new Error('qq-music-api 未返回歌词');
 	}
 
 	return { lrc, trans };
@@ -573,7 +542,7 @@ export const resolveQqSdkLyric = async ({
 export const getQqLoginQr = async () => {
 	const body = unwrapQqSdkResponse(
 		await getQQLoginQr(),
-		"获取 QQ 登录二维码失败"
+		'获取 QQ 登录二维码失败'
 	);
 	return body.response || body.data || body;
 };
@@ -584,7 +553,7 @@ export const checkQqLogin = async (
 ) => {
 	const body = unwrapQqSdkResponse(
 		await checkQQLoginQr({ ptqrtoken, qrsig }),
-		"检查 QQ 登录状态失败"
+		'检查 QQ 登录状态失败'
 	);
 	return body.response || body.data || body;
 };
@@ -622,14 +591,17 @@ export const searchQqMusic = async ({
 				? { headers: { Cookie: normalizedCookie } }
 				: undefined,
 		}),
-		"qq-music-api 搜索失败"
+		'qq-music-api 搜索失败'
 	);
 
 	return body.response || body.data || body;
 };
 
 // ─── QRC 解密 ─────────────────────────────────────────────────────────────────
-const QRC_KEY = Buffer.from("!@#)(*$%123ZXC!@!@#)(NHL", "utf8");
+// 移植自 SPlayer-Next electron/main/apis/qqmusic/core/tripledes.ts + qrc.ts
+// 原始来源: LDDC 项目 https://github.com/chenmozhijin/LDDC
+
+const QRC_KEY = Buffer.from('!@#)(*$%123ZXC!@!@#)(NHL', 'utf8');
 
 const SBOX: number[][] = [
 	[
@@ -965,6 +937,7 @@ const _desBlock = (inp: Buffer, key: number[][]): Buffer => {
 	return _fp(s0, s1);
 };
 
+// 预计算 QRC_KEY 的密钥调度，避免每次解密重复计算
 const QRC_DES_KEYS = {
 	k1: _ks(QRC_KEY.slice(16, 24), 0),
 	k2: _ks(QRC_KEY.slice(8, 16), 1),
@@ -982,18 +955,18 @@ const tripleDesDecrypt = (data: Buffer): Buffer => {
 };
 
 const decryptQrc = (encryptedHex: string): string => {
-	if (!encryptedHex?.trim()) throw new Error("QRC 密文为空");
-	const decrypted = tripleDesDecrypt(Buffer.from(encryptedHex, "hex"));
+	if (!encryptedHex?.trim()) throw new Error('QRC 密文为空');
+	const decrypted = tripleDesDecrypt(Buffer.from(encryptedHex, 'hex'));
 	for (const decompress of [inflateSync, inflateRawSync, unzipSync]) {
 		try {
-			return decompress(decrypted).toString("utf8");
+			return decompress(decrypted).toString('utf8');
 		} catch {
 			/* 继续 */
 		}
 	}
-	const raw = decrypted.toString("utf8");
-	if (raw.includes("[") || raw.includes("<")) return raw;
-	throw new Error("QRC 解压失败");
+	const raw = decrypted.toString('utf8');
+	if (raw.includes('[') || raw.includes('<')) return raw;
+	throw new Error('QRC 解压失败');
 };
 
 const tryDecryptQrc = (hex: string | undefined): string | undefined => {
@@ -1005,11 +978,17 @@ const tryDecryptQrc = (hex: string | undefined): string | undefined => {
 	}
 };
 
+// ─── QQ 音乐原生歌词接口（支持 QRC 逐字）────────────────────────────────────
+
+/**
+ * 调用 music.musichallSong.PlayLyricInfo/GetPlayLyricInfo 获取 QRC 歌词。
+ * 参考 SPlayer-Next electron/main/apis/qqmusic/modules/lyric.ts
+ */
 export const resolveQqNativeLyric = async ({
 	songId,
-	name = "",
-	artist = "",
-	album = "",
+	name = '',
+	artist = '',
+	album = '',
 	duration = 0,
 	cookie,
 }: {
@@ -1020,7 +999,7 @@ export const resolveQqNativeLyric = async ({
 	duration?: number;
 	cookie?: string;
 }): Promise<{ lrc?: string; qrc?: string; trans?: string; roma?: string }> => {
-	const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
+	const b64 = (text: string) => Buffer.from(text, 'utf8').toString('base64');
 
 	const baseParam = {
 		albumName: b64(album),
@@ -1042,30 +1021,31 @@ export const resolveQqNativeLyric = async ({
 	};
 
 	const buildBody = (param: Record<string, unknown>) => ({
-		comm: { ct: "19", cv: "1859", uin: "0" },
+		comm: { ct: '19', cv: '1859', uin: '0' },
 		req: {
-			module: "music.musichallSong.PlayLyricInfo",
-			method: "GetPlayLyricInfo",
+			module: 'music.musichallSong.PlayLyricInfo',
+			method: 'GetPlayLyricInfo',
 			param,
 		},
 	});
 
-	const normalizedCookie = cookie ? normalizeQqCookie(cookie) : "";
+	const normalizedCookie = cookie ? normalizeQqCookie(cookie) : '';
 
 	const doRequest = async (param: Record<string, unknown>) => {
 		const body = buildBody(param);
 		const headers: Record<string, string> = {
 			...txHeaders,
-			"Content-Type": "application/json",
+			'Content-Type': 'application/json',
 		};
-		if (normalizedCookie) headers["Cookie"] = normalizedCookie;
+		if (normalizedCookie) headers['Cookie'] = normalizedCookie;
 
+		// 优先签名请求，稳定性更好；失败回退普通请求
 		try {
 			const sign = await zzcSign(JSON.stringify(body));
-			const response = await fetchWithRetry(
+			const response = await fetch(
 				`https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
 				{
-					method: "POST",
+					method: 'POST',
 					headers,
 					body: JSON.stringify(body),
 					signal: AbortSignal.timeout(8000),
@@ -1076,13 +1056,13 @@ export const resolveQqNativeLyric = async ({
 			return await response.json();
 		} catch (signedErr) {
 			console.warn(
-				"[qq_music_sdk] QRC 签名请求失败，回退到普通请求:",
+				'[qq_music_sdk] QRC 签名请求失败，回退到普通请求:',
 				signedErr
 			);
-			const response = await fetchWithRetry(
-				"https://u.y.qq.com/cgi-bin/musicu.fcg",
+			const response = await fetch(
+				'https://u.y.qq.com/cgi-bin/musicu.fcg',
 				{
-					method: "POST",
+					method: 'POST',
 					headers,
 					body: JSON.stringify(body),
 					signal: AbortSignal.timeout(8000),
@@ -1103,15 +1083,17 @@ export const resolveQqNativeLyric = async ({
 		roma?: string;
 	} = {};
 
+	// qrc_t 为非零数字时 lyric 字段是 QRC，否则是 LRC
 	const mainDecrypted = tryDecryptQrc(data.lyric);
 	if (mainDecrypted) {
-		if (typeof data.qrc_t === "number" && data.qrc_t !== 0) {
+		if (typeof data.qrc_t === 'number' && data.qrc_t !== 0) {
 			result.qrc = mainDecrypted;
 		} else {
 			result.lrc = mainDecrypted;
 		}
 	}
 
+	// 有 QRC 但缺 LRC 时补一次请求（翻译对齐需要 LRC 时间戳）
 	if (result.qrc && !result.lrc) {
 		try {
 			const lrcResp = await doRequest({ ...baseParam, qrc: 0, qrc_t: 0 });
@@ -1119,7 +1101,7 @@ export const resolveQqNativeLyric = async ({
 			const lrcText = tryDecryptQrc(lrcData.lyric);
 			if (lrcText) result.lrc = lrcText;
 		} catch (lrcErr) {
-			console.warn("[qq_music_sdk] 补充 LRC 请求失败:", lrcErr);
+			console.warn('[qq_music_sdk] 补充 LRC 请求失败:', lrcErr);
 		}
 	}
 
