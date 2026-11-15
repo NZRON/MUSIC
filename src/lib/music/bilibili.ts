@@ -12,7 +12,7 @@
  */
 
 const BILI_UA =
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 interface SongInfo {
 	id: number;
@@ -66,40 +66,16 @@ export interface BilibiliTrack {
 	id: string;
 	title: string;
 	artist: string;
-	source: "bilibili";
-	musicPlatform: "bilibili";
+	source: 'bilibili';
+	musicPlatform: 'bilibili';
 	cover: string;
 	duration: number;
 	album: string;
 	pages: VideoPage[];
 }
 
-/**
- * 带重试机制的 fetch 请求封装，增强弱网环境及 B 站接口波动时的稳定性
- */
-const fetchWithRetry = async (
-	url: string,
-	options: RequestInit,
-	retries = 2,
-	delay = 1000
-): Promise<Response> => {
-	try {
-		const response = await fetch(url, options);
-		if (!response.ok && response.status >= 500 && retries > 0) {
-			throw new Error(`Server HTTP error: ${response.status}`);
-		}
-		return response;
-	} catch (error) {
-		if (retries > 0) {
-			await new Promise((resolve) => setTimeout(resolve, delay));
-			return fetchWithRetry(url, options, retries - 1, delay * 2);
-		}
-		throw error;
-	}
-};
-
 function htmlDecode(value: string) {
-	return value.replace(/<[^>]*>/g, "");
+	return value.replace(/<[^>]*>/g, '');
 }
 
 function bi_convert_song(
@@ -108,39 +84,39 @@ function bi_convert_song(
 ): BilibiliTrack {
 	let imgUrl = song_info.pic;
 	const durationStr = song_info.duration
-		.split(":")
+		.split(':')
 		.map((x) => Number.parseInt(x))
 		.reverse();
 	let duration = durationStr[0] + durationStr[1] * 60;
 	if (durationStr.length === 3) {
 		duration += durationStr[2] * 60 * 60;
 	}
-	if (imgUrl.startsWith("//")) {
+	if (imgUrl.startsWith('//')) {
 		imgUrl = `https:${imgUrl}`;
 	}
 	return {
 		id: song_info.bvid,
 		title: htmlDecode(song_info.title),
 		artist: htmlDecode(song_info.author),
-		source: "bilibili",
-		musicPlatform: "bilibili",
+		source: 'bilibili',
+		musicPlatform: 'bilibili',
 		cover: imgUrl,
 		duration,
-		album: "Bilibili Video",
+		album: 'Bilibili Video',
 		pages: pages || [],
 	};
 }
 
 function buildBiliHeaders(clientIp?: string): Record<string, string> {
 	const headers: Record<string, string> = {
-		Cookie: "buvid3=0",
-		Referer: "https://www.bilibili.com/",
-		"User-Agent": BILI_UA,
+		Cookie: 'buvid3=0',
+		Referer: 'https://www.bilibili.com/',
+		'User-Agent': BILI_UA,
 	};
 	if (clientIp) {
-		headers["X-Forwarded-For"] = clientIp;
-		headers["X-Real-IP"] = clientIp;
-		headers["Client-IP"] = clientIp;
+		headers['X-Forwarded-For'] = clientIp;
+		headers['X-Real-IP'] = clientIp;
+		headers['Client-IP'] = clientIp;
 	}
 	return headers;
 }
@@ -156,22 +132,22 @@ export async function searchBilibili(
 	if (!keyword) return [];
 
 	const params = new URLSearchParams({
-		__refresh__: "true",
-		page: "1",
+		__refresh__: 'true',
+		page: '1',
 		page_size: String(limit),
-		platform: "pc",
-		highlight: "1",
-		single_column: "0",
+		platform: 'pc',
+		highlight: '1',
+		single_column: '0',
 		keyword,
-		search_type: "video",
-		dynamic_offset: "0",
-		preload: "true",
-		com2co: "true",
+		search_type: 'video',
+		dynamic_offset: '0',
+		preload: 'true',
+		com2co: 'true',
 	});
 	const target_url = `https://api.bilibili.com/x/web-interface/search/type?${params.toString()}`;
 
-	const resp = await fetchWithRetry(target_url, {
-		method: "GET",
+	const resp = await fetch(target_url, {
+		method: 'GET',
 		headers: buildBiliHeaders(),
 		signal: AbortSignal.timeout(12000),
 	});
@@ -184,32 +160,31 @@ export async function searchBilibili(
 		);
 	}
 
-	// 使用 Promise.allSettled 代替 Promise.all，防止单个视频详情挂掉导致整个搜索结果崩溃
-	const resultsSettled = await Promise.allSettled(
+	const results = await Promise.all(
 		json.data.result.map(async (song) => {
-			const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(
-				song.bvid
-			)}`;
-			const viewRes = await fetchWithRetry(viewUrl, {
-				method: "GET",
-				headers: buildBiliHeaders(),
-				signal: AbortSignal.timeout(8000),
-			});
-			if (!viewRes.ok) return bi_convert_song(song);
-			const videoInfo = (await viewRes.json()) as VideoInfoRes;
-			if (videoInfo.code !== 0) return bi_convert_song(song);
-			return bi_convert_song(song, videoInfo.data?.pages || []);
+			try {
+				const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(
+					song.bvid
+				)}`;
+				const viewRes = await fetch(viewUrl, {
+					method: 'GET',
+					headers: buildBiliHeaders(),
+					signal: AbortSignal.timeout(8000),
+				});
+				if (!viewRes.ok) return bi_convert_song(song);
+				const videoInfo = (await viewRes.json()) as VideoInfoRes;
+				if (videoInfo.code !== 0) return bi_convert_song(song);
+				return bi_convert_song(song, videoInfo.data?.pages || []);
+			} catch (error) {
+				console.log(
+					`[bilibili] Failed to fetch video info for ${song.bvid}:`,
+					error
+				);
+				return bi_convert_song(song);
+			}
 		})
 	);
-
-	return resultsSettled.map((res, index) => {
-		const song = json.data.result[index];
-		if (res.status === "fulfilled") {
-			return res.value;
-		}
-		console.warn(`[bilibili] Failed to fetch video info for ${song.bvid}:`, res.reason);
-		return bi_convert_song(song);
-	});
+	return results;
 }
 
 /**
@@ -225,17 +200,17 @@ export async function resolveBilibiliUrl(
 	cid?: string | number,
 	clientIp?: string
 ): Promise<{ url: string; pay: false }> {
-	if (!bvid) throw new Error("缺少 id 参数");
+	if (!bvid) throw new Error('缺少 id 参数');
 
 	const headers = buildBiliHeaders(clientIp);
-	let finalCid = cid ? String(cid) : "";
+	let finalCid = cid ? String(cid) : '';
 
 	if (!finalCid) {
 		const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(
 			bvid
 		)}`;
-		const resp1 = await fetchWithRetry(viewUrl, {
-			method: "GET",
+		const resp1 = await fetch(viewUrl, {
+			method: 'GET',
 			headers,
 			signal: AbortSignal.timeout(8000),
 		});
@@ -243,22 +218,23 @@ export async function resolveBilibiliUrl(
 			throw new Error(`获取 B站视频信息失败: HTTP ${resp1.status}`);
 		const viewJson = (await resp1.json()) as CidRes;
 		if (!viewJson?.data?.pages?.[0]?.cid) {
-			throw new Error("获取 CID 失败");
+			throw new Error('获取 CID 失败');
 		}
 		finalCid = viewJson.data.pages[0].cid;
 	}
 
+	// 使用 platform=html5 参数绕过严格防盗链验证（允许前端使用 referrerpolicy="no-referrer"）
 	const playParams = new URLSearchParams({
-		fnval: "1",
-		platform: "html5",
-		high_quality: "1",
+		fnval: '1',
+		platform: 'html5',
+		high_quality: '1',
 		bvid,
 		cid: finalCid,
 	});
 	const playUrl = `https://api.bilibili.com/x/player/playurl?${playParams.toString()}`;
 
-	const resp2 = await fetchWithRetry(playUrl, {
-		method: "GET",
+	const resp2 = await fetch(playUrl, {
+		method: 'GET',
 		headers,
 		signal: AbortSignal.timeout(10000),
 	});
@@ -266,7 +242,7 @@ export async function resolveBilibiliUrl(
 		throw new Error(`获取 B站播放链接失败: HTTP ${resp2.status}`);
 	const playJson = (await resp2.json()) as NoRefererPlayUrlRes;
 	if (playJson.code !== 0 || !playJson.data?.durl?.length) {
-		throw new Error(`获取歌曲链接失败: ${playJson.message || "未知错误"}`);
+		throw new Error(`获取歌曲链接失败: ${playJson.message || '未知错误'}`);
 	}
 	return { url: playJson.data.durl[0].url, pay: false };
 }
