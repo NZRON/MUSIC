@@ -10,10 +10,10 @@
  * the correct Referer headers.
  */
 
-import { createHash, createCipheriv } from "node:crypto";
+import { createHash, createCipheriv } from 'node:crypto';
 
 // --- EAPI encryption (ported verbatim from native_wy.ts) ---
-const eapiKey = "e82ckenh8dichen8";
+const eapiKey = 'e82ckenh8dichen8';
 
 function aesEncrypt(
 	buffer: Buffer,
@@ -27,48 +27,48 @@ function aesEncrypt(
 
 export function eapi(url: string, object: unknown): { params: string } {
 	const text =
-		typeof object === "object" ? JSON.stringify(object) : String(object);
+		typeof object === 'object' ? JSON.stringify(object) : String(object);
 	const message = `nobody${url}use${text}md5forencrypt`;
-	const digest = createHash("md5").update(message).digest("hex");
+	const digest = createHash('md5').update(message).digest('hex');
 	const data = `${url}-36cd479b6b5-${text}-36cd479b6b5-${digest}`;
 	return {
-		params: aesEncrypt(Buffer.from(data), "aes-128-ecb", eapiKey, "")
-			.toString("hex")
+		params: aesEncrypt(Buffer.from(data), 'aes-128-ecb', eapiKey, '')
+			.toString('hex')
 			.toUpperCase(),
 	};
 }
 
 // Original headers from native_wy.ts (preserved verbatim)
 const WY_EAPI_HEADERS = {
-	"User-Agent":
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36",
-	origin: "https://music.163.com",
-	"Content-Type": "application/x-www-form-urlencoded",
+	'User-Agent':
+		'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+	origin: 'https://music.163.com',
+	'Content-Type': 'application/x-www-form-urlencoded',
 };
 
 // Headers for the public search API (preserved from original)
 const WY_SEARCH_HEADERS = {
-	"User-Agent":
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36",
-	Referer: "https://music.163.com",
-	origin: "https://music.163.com",
+	'User-Agent':
+		'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+	Referer: 'https://music.163.com',
+	origin: 'https://music.163.com',
 };
 
 // Headers for song URL resolution (preserved from original — os=pc cookie needed)
 const WY_URL_HEADERS = {
-	"User-Agent":
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36",
-	Referer: "https://music.163.com",
-	origin: "https://music.163.com",
-	Cookie: "os=pc",
+	'User-Agent':
+		'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+	Referer: 'https://music.163.com',
+	origin: 'https://music.163.com',
+	Cookie: 'os=pc',
 };
 
 // Headers for lyric API (preserved from original)
 const WY_LYRIC_HEADERS = {
-	"User-Agent":
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36",
-	Referer: "https://music.163.com",
-	origin: "https://music.163.com",
+	'User-Agent':
+		'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+	Referer: 'https://music.163.com',
+	origin: 'https://music.163.com',
 };
 
 export interface NetEaseSong {
@@ -82,30 +82,6 @@ export interface NetEaseSong {
 }
 
 /**
- * 带重试机制的 fetch 请求封装，提升弱网环境下的稳定性
- */
-const fetchWithRetry = async (
-	url: string,
-	options: RequestInit,
-	retries = 2,
-	delay = 1000
-): Promise<Response> => {
-	try {
-		const response = await fetch(url, options);
-		if (!response.ok && response.status >= 500 && retries > 0) {
-			throw new Error(`Server HTTP error: ${response.status}`);
-		}
-		return response;
-	} catch (error) {
-		if (retries > 0) {
-			await new Promise((resolve) => setTimeout(resolve, delay));
-			return fetchWithRetry(url, options, retries - 1, delay * 2);
-		}
-		throw error;
-	}
-};
-
-/**
  * Search NetEase via the public search API (no encryption needed).
  * Headers preserved from the original lx-music default headers.
  */
@@ -116,7 +92,7 @@ export async function searchNetEase(
 	const url = `https://music.163.com/api/search/get?s=${encodeURIComponent(
 		keyword
 	)}&type=1&limit=${limit}`;
-	const res = await fetchWithRetry(url, {
+	const res = await fetch(url, {
 		headers: WY_SEARCH_HEADERS,
 		signal: AbortSignal.timeout(10000),
 	});
@@ -136,11 +112,11 @@ export async function searchNetEase(
 		return {
 			id: s.id as number,
 			name: s.name as string,
-			artist: artists?.map((a) => a.name).join("、") ?? "未知",
-			album: album?.name ?? "",
+			artist: artists?.map((a) => a.name).join('、') ?? '未知',
+			album: album?.name ?? '',
 			albumId: album?.id ?? 0,
 			duration: Math.round((s.duration as number) / 1000),
-			cover: album?.picUrl ?? "",
+			cover: album?.picUrl ?? '',
 		};
 	});
 }
@@ -164,7 +140,7 @@ export async function resolveNetEaseUrl(
 			const url = `https://music.163.com/api/song/enhance/player/url/v1?ids=${encodeURIComponent(
 				`[${songId}]`
 			)}&level=exhigh&encodeType=mp3`;
-			const res = await fetchWithRetry(url, {
+			const res = await fetch(url, {
 				headers: {
 					...WY_URL_HEADERS,
 					Cookie: `os=pc; ${loginCookie}`,
@@ -179,7 +155,7 @@ export async function resolveNetEaseUrl(
 				if (item?.url) return item.url;
 			}
 		} catch (e) {
-			console.warn("[netease] enhance/player/url with cookie failed:", e);
+			console.warn('[netease] enhance/player/url with cookie failed:', e);
 		}
 	}
 
@@ -189,21 +165,21 @@ export async function resolveNetEaseUrl(
 			String(songId)
 		)}`;
 		const res = await fetch(metingUrl, {
-			method: "GET",
-			redirect: "manual",
-			headers: { "User-Agent": WY_SEARCH_HEADERS["User-Agent"] },
+			method: 'GET',
+			redirect: 'manual',
+			headers: { 'User-Agent': WY_SEARCH_HEADERS['User-Agent'] },
 			signal: AbortSignal.timeout(8000),
 		});
 		if (res.status === 302 || res.status === 301) {
-			const loc = res.headers.get("location");
-			if (loc && loc.startsWith("http")) return loc;
+			const loc = res.headers.get('location');
+			if (loc && loc.startsWith('http')) return loc;
 		}
-		const ct = res.headers.get("content-type") ?? "";
-		if (res.ok && (ct.startsWith("audio") || ct.includes("octet-stream"))) {
+		const ct = res.headers.get('content-type') ?? '';
+		if (res.ok && (ct.startsWith('audio') || ct.includes('octet-stream'))) {
 			return metingUrl;
 		}
 	} catch (e) {
-		console.warn("[netease] Meting mirror failed:", e);
+		console.warn('[netease] Meting mirror failed:', e);
 	}
 
 	// 3. Official song/enhance/player/url/v1 (without login cookie)
@@ -211,7 +187,7 @@ export async function resolveNetEaseUrl(
 		const url = `https://music.163.com/api/song/enhance/player/url/v1?ids=${encodeURIComponent(
 			`[${songId}]`
 		)}&level=exhigh&encodeType=mp3`;
-		const res = await fetchWithRetry(url, {
+		const res = await fetch(url, {
 			headers: WY_URL_HEADERS,
 			signal: AbortSignal.timeout(8000),
 		});
@@ -223,7 +199,7 @@ export async function resolveNetEaseUrl(
 			if (item?.url) return item.url;
 		}
 	} catch (e) {
-		console.warn("[netease] enhance/player/url failed:", e);
+		console.warn('[netease] enhance/player/url failed:', e);
 	}
 
 	// 4. Official outer url redirect
@@ -232,15 +208,15 @@ export async function resolveNetEaseUrl(
 			String(songId)
 		)}.mp3`;
 		const res = await fetch(outerUrl, {
-			method: "GET",
-			redirect: "manual",
-			headers: { "User-Agent": WY_SEARCH_HEADERS["User-Agent"] },
+			method: 'GET',
+			redirect: 'manual',
+			headers: { 'User-Agent': WY_SEARCH_HEADERS['User-Agent'] },
 			signal: AbortSignal.timeout(6000),
 		});
-		const loc = res.headers.get("location");
-		if (loc && !loc.includes("/404")) return loc;
+		const loc = res.headers.get('location');
+		if (loc && !loc.includes('/404')) return loc;
 	} catch (e) {
-		console.warn("[netease] outer url failed:", e);
+		console.warn('[netease] outer url failed:', e);
 	}
 
 	throw new Error(
@@ -255,7 +231,7 @@ export async function fetchNetEaseLyric(
 	const url = `https://music.163.com/api/song/lyric?id=${encodeURIComponent(
 		String(songId)
 	)}&lv=1&kv=1&tv=-1`;
-	const res = await fetchWithRetry(url, {
+	const res = await fetch(url, {
 		headers: WY_LYRIC_HEADERS,
 		signal: AbortSignal.timeout(8000),
 	});
