@@ -1,46 +1,84 @@
-import { ok } from "@/lib/api";
+import { ok, fail, handleError, readBody } from "@/lib/api";
+
+const QQ_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /**
  * POST /api/auth/qq-check
  *
- * 直接返回硬编码的 QQ 音乐登录态，不再走二维码轮询。
+ * Poll QQ Music login status. Returns "waiting" | "success" | "expired".
+ * On success, returns the cookie + user info.
+ *
+ * Body: { ptqrtoken: number, qrsig: string }
  */
-export async function POST() {
-  return ok({
-    status: "success" as const,
-    cookie:
-      "uin=2767868647; " +
-      "qqmusic_key=Q_H_L_63k3Nock6YFoyY68Xf6zwvQP7iIM_nSYw2iEbdBiX9Lt0HCQ19fAHV1-CqvIVmdA-H2q4zPMTOteiLzo7yy_lsHREhgBZbw; " +
-      "qm_keyst=Q_H_L_63k3Nock6YFoyY68Xf6zwvQP7iIM_nSYw2iEbdBiX9Lt0HCQ19fAHV1-CqvIVmdA-H2q4zPMTOteiLzo7yy_lsHREhgBZbw; " +
-      "psrf_access_token_expiresAt=1799965880; " +
-      "psrf_musickey_createtime=1794781880; " +
-      "psrf_qqaccess_token=07D29D587B3C258C2CCB3CFF363DA0A9; " +
-      "psrf_qqopenid=414D5125FBEF14E40CAD5B7DC8DDC264; " +
-      "psrf_qqrefresh_token=1346ADDE007ABBFD8375EFCF36531CA5; " +
-      "psrf_qqunionid=FE4FB795E4A5B7C952011C4862F94C1F; " +
-      "euin=owSs7icsNeCP7z**; " +
-      "login_type=1; " +
-      "tmeLoginType=2; " +
-      "music_ignore_pskey=202306271436Hn@vBj; " +
-      "qlogin_uid=def6c175e51588152578df49eac07b70; " +
-      "ptui_loginuin=2767868647; " +
-      "pgv_pvid=6761286960; " +
-      "pgv_info=ssid=s4085103216; " +
-      "ts_last=y.qq.com/; " +
-      "ts_refer=ADTAGmyqq; " +
-      "ts_uid=8925255875; " +
-      "RK=tL7b/AqQsT; " +
-      "ptcz=ec8bd7f9ba08558f2676847bc685dcf1c9be353888dc226ee7044da2e33c31e2; " +
-      "fqm_pvqid=b4afc546-8fcd-489b-86fe-92473ebbe3ea; " +
-      "fqm_sessionid=f0f10c00-8a85-4d1d-a6a3-60445015d17b; " +
-      "_tme_cid=cid_v1_708484d1872a56fa744c16ab70f28115eb0d; " +
-      "_tme_did=secid_v1_d56a1860f27a63baaa847e6894b36bbb5459",
-    uin: "2767868647",
-    message: "使用硬编码 cookie",
-    user: {
-      userId: "2767868647",
-      nickname: "QQ 2767868647",
-      avatarUrl: "https://q.qlogo.cn/g?b=qq&nk=2767868647&s=140",
-    },
-  });
+export async function POST(req: Request) {
+  try {
+    const body = await readBody<{ ptqrtoken?: number; qrsig?: string }>(req);
+    const ptqrtoken = body.ptqrtoken;
+    const qrsig = (body.qrsig ?? "").trim();
+    if (!ptqrtoken || !qrsig) return fail("缺少 ptqrtoken 或 qrsig", 400);
+
+    // Poll QQ login status
+    const checkUrl = `https://ssl.ptlogin2.qq.com/ptqrlogin?u1=https%3A//y.qq.com/portal/player.html&ptqrtoken=${ptqrtoken}&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-${Date.now()}&js_ver=10275&js_type=1&login_sig=${qrsig}&pt_uistyle=40&aid=716027609&daid=38&pt_3rd_aid=0`;
+    const res = await fetch(checkUrl, {
+      headers: {
+        "User-Agent": QQ_UA,
+        Referer: "https://y.qq.com/",
+        Cookie: `qrsig=${qrsig}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return fail(`QQ 登录检查失败: HTTP ${res.status}`, 502);
+    const text = await res.text();
+
+    // Parse the response: ptuiCB('66','0','...','0','二维码未失效。(862898517)', '');
+    // Code 66 = waiting, 67 = expired, 0 = success (with redirect URL)
+    const codeMatch = text.match(/ptuiCB\('(\d+)','(\d+)','([^']*)','(\d+)','([^']*)'/);
+    if (!codeMatch) {
+      return fail("QQ 登录检查响应格式异常", 502);
+    }
+
+    const [, code, , redirectUrl, , message] = codeMatch;
+    let status: "waiting" | "success" | "expired" = "waiting";
+    let cookie = "";
+    let uin = "";
+
+    if (code === "0") {
+      // Success — follow redirect to get cookies
+      status = "success";
+      const cookieRes = await fetch(redirectUrl, {
+        headers: { "User-Agent": QQ_UA, Referer: "https://y.qq.com/" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      });
+      const setCookie = cookieRes.headers.get("set-cookie") || "";
+      // Extract relevant cookies: uin, qqmusic_key, qm_keyst
+      const cookies: string[] = [];
+      for (const c of setCookie.split(",")) {
+        const trimmed = c.trim();
+        if (trimmed.startsWith("uin=") || trimmed.startsWith("qqmusic_key=") || trimmed.startsWith("qm_keyst=") || trimmed.startsWith("psrf=")) {
+          cookies.push(trimmed.split(";")[0]);
+        }
+      }
+      cookie = cookies.join("; ");
+      const uinMatch = setCookie.match(/uin=o?(\d+)/);
+      uin = uinMatch ? uinMatch[1] : "";
+    } else if (code === "67") {
+      status = "expired";
+    }
+
+    return ok({
+      status,
+      cookie: cookie || undefined,
+      uin: uin || undefined,
+      message,
+      user: status === "success" ? {
+        userId: uin,
+        nickname: uin ? `QQ ${uin}` : "QQ音乐账号",
+        avatarUrl: uin ? `https://q.qlogo.cn/g?b=qq&nk=${uin}&s=140` : "",
+      } : undefined,
+    });
+  } catch (err) {
+    return handleError(err);
+  }
 }
