@@ -8,7 +8,7 @@ import { cookies } from 'next/headers';
  * use them for VIP song playback / download.
  *
  * Body: { platform: "netease" | "qq", cookie: string }
- * Sets an httpOnly cookie: music_cookie_neteese / music_cookie_qq
+ * Sets an httpOnly cookie: music_cookie_netease / music_cookie_qq
  *
  * GET /api/auth/music-cookie?platform=netease
  * Returns the stored cookie for the specified platform.
@@ -49,7 +49,16 @@ export async function GET(req: Request) {
 
 		const cookieName = `music_cookie_${platform}`;
 		const store = await cookies();
-		const cookie = store.get(cookieName)?.value || null;
+		let cookie = store.get(cookieName)?.value || null;
+
+		// 【新增】如果 HTTP Cookie 中没有，则尝试从环境变量兜底获取
+		if (!cookie) {
+			if (platform === 'netease') {
+				cookie = process.env.NETEASE_COOKIE || null;
+			} else if (platform === 'qq') {
+				cookie = process.env.TENCENT_COOKIE || null;
+			}
+		}
 
 		return ok({ platform, cookie, hasCookie: !!cookie });
 	} catch (err) {
