@@ -9,6 +9,13 @@ const QQ_MID_PREFIX_RE = /^qqmid:/i;
 const QQ_LEGACY_ID_RE = /^\d+$/;
 const TX_DETAIL_CACHE_TTL = 6 * 60 * 60 * 1000;
 
+// 【修复兼容性】兼容 Cloudflare Workers / Edge 运行时的超时 Signal 辅助函数
+function createTimeoutSignal(ms: number): AbortSignal {
+	const controller = new AbortController();
+	setTimeout(() => controller.abort(), ms);
+	return controller.signal;
+}
+
 // 签名算法常量
 const PART_1_INDEXES = [23, 14, 6, 36, 16, 40, 7, 19];
 const PART_2_INDEXES = [16, 1, 32, 12, 19, 27, 8, 5];
@@ -64,7 +71,7 @@ export const txSignedRequest = async (body: any) => {
 				method: 'POST',
 				headers: { ...txHeaders, 'Content-Type': 'application/json' },
 				body: JSON.stringify(body),
-				signal: AbortSignal.timeout(8000),
+				signal: createTimeoutSignal(8000), // 【修改】使用兼容的超时 Signal
 			}
 		);
 		if (!response.ok)
@@ -227,7 +234,6 @@ export const getTxSongPlayableInfo = async (
 	const cached = getCachedTxSongDetail(cacheKey);
 	if (cached) return cached;
 
-	// 旧 QQ 数字 ID 只在播放时转 MID，避免批量改历史数据。
 	let result: any;
 	try {
 		result = await txRequest(
@@ -235,33 +241,33 @@ export const getTxSongPlayableInfo = async (
 			createTxSongDetailBody(normalized)
 		);
 	} catch (error) {
-		if (normalized.idType === 'mid') {
-			const value = {
-				...normalized,
-				songmid: normalized.normalizedMusicId,
-			};
-			setCachedTxSongDetail(cacheKey, value);
-			return value;
-		}
-		throw error;
+		// 【优化】即使详情请求失败，如果是 mid 或者降级，也尝试直接返回，避免直接阻断播放链
+		const value = {
+			...normalized,
+			songmid: normalized.normalizedMusicId,
+		};
+		setCachedTxSongDetail(cacheKey, value);
+		return value;
 	}
 
 	if (!result || result.code !== 0 || result.req?.code !== 0) {
-		if (normalized.idType === 'mid') {
-			const value = {
-				...normalized,
-				songmid: normalized.normalizedMusicId,
-			};
-			setCachedTxSongDetail(cacheKey, value);
-			return value;
-		}
-		throw createStatusError(502, 'QQ 音乐详情接口异常');
+		const value = {
+			...normalized,
+			songmid: normalized.normalizedMusicId,
+		};
+		setCachedTxSongDetail(cacheKey, value);
+		return value;
 	}
 
 	const trackInfo = result.req?.data?.track_info;
 	const songmid = trackInfo?.mid || normalized.normalizedMusicId;
 	if (!songmid) {
-		throw createStatusError(502, 'QQ 音乐详情缺少 MID');
+		const value = {
+			...normalized,
+			songmid: normalized.normalizedMusicId,
+		};
+		setCachedTxSongDetail(cacheKey, value);
+		return value;
 	}
 
 	const value = {
@@ -287,7 +293,7 @@ export const txRequest = async (url: string, body: any) => {
 			method: 'POST',
 			headers: { ...txHeaders, 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(8000),
+			signal: createTimeoutSignal(8000), // 【修改】使用兼容的超时 Signal
 		});
 		if (!response.ok) throw new Error(`TX Request HTTP ${response.status}`);
 		return await response.json();
