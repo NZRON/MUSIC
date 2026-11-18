@@ -103,7 +103,7 @@ export async function isCloudflareKV(): Promise<boolean> {
 }
 
 // ==========================================
-// 新增：音乐 Cookie 专属获取与自动同步函数
+// 扩展：支持从环境变量写入并从 KV 获取音乐 Cookie
 // ==========================================
 
 export const KV_COOKIE_KEYS = {
@@ -112,7 +112,9 @@ export const KV_COOKIE_KEYS = {
 } as const;
 
 /**
- * 获取音乐 Cookie（支持从 KV 读取，若 KV 中没有则自动从环境变量同步写入 KV）
+ * 获取音乐 Cookie：
+ * 1. 优先从 Cloudflare KV (`env.KV`) 中读取。
+ * 2. 如果 KV 中没有，但环境变量（NETEASE_COOKIE / QQ_COOKIE）配置了，则自动写入 KV 并返回。
  * @param platform 平台类型：'netease' 或 'qq'
  */
 export async function getMusicCookie(platform: 'netease' | 'qq'): Promise<string | null> {
@@ -121,7 +123,7 @@ export async function getMusicCookie(platform: 'netease' | 'qq'): Promise<string
 	const envKey = platform === 'netease' ? 'NETEASE_COOKIE' : 'QQ_COOKIE';
 
 	try {
-		// 1. 优先尝试从 KV 中获取
+		// 1. 尝试从 KV 读取
 		const val = await kv.get<string>(kvKey);
 		if (val && typeof val === 'string' && val.trim() !== '') {
 			return val;
@@ -130,11 +132,11 @@ export async function getMusicCookie(platform: 'netease' | 'qq'): Promise<string
 		console.error(`Failed to get ${platform} cookie from KV:`, err);
 	}
 
-	// 2. 如果 KV 中没有，则检查环境变量中是否有配置
+	// 2. 如果 KV 中没有，检查环境变量
 	const envCookie = process.env[envKey];
 	if (envCookie && envCookie.trim() !== '') {
 		try {
-			// 自动将环境变量的 Cookie 写入 KV，实现“通过变量写入 KV”的持久化
+			// 自动将环境变量中的 Cookie 同步写入到已有的 KV 中
 			await kv.put(kvKey, envCookie);
 		} catch (err) {
 			console.error(`Failed to sync ${platform} cookie to KV:`, err);
