@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { getMusicCookie } from '@/lib/kv'
 
 export const txHeaders = {
   'User-Agent': 'QQMusic 14090508(android 12)'
@@ -50,12 +51,22 @@ function createStatusError(status: number, message: string): Error {
  * 使用签名请求 QQ 音乐 API
  * 相比普通 musicu.fcg，musics.fcg?sign=... 的签名请求更稳定
  */
-export const txSignedRequest = async (body: any) => {
+export const txSignedRequest = async (body: any, customCookie?: string) => {
   const sign = await zzcSign(JSON.stringify(body))
+  const activeCookie = customCookie || (await getMusicCookie('qq')) || undefined;
+  
+  const headers: Record<string, string> = { 
+    ...txHeaders, 
+    'Content-Type': 'application/json' 
+  };
+  if (activeCookie) {
+    headers['Cookie'] = activeCookie;
+  }
+
   try {
     const response = await fetch(`https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`, {
       method: 'POST',
-      headers: { ...txHeaders, 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000)
     })
@@ -212,7 +223,6 @@ export const getTxSongPlayableInfo = async (
   const cached = getCachedTxSongDetail(cacheKey)
   if (cached) return cached
 
-  // 旧 QQ 数字 ID 只在播放时转 MID，避免批量改历史数据。
   let result: any
   try {
     result = await txRequest(TX_MUSICU_URL, createTxSongDetailBody(normalized))
@@ -263,11 +273,21 @@ export const getTxSongPlayableInfo = async (
   return value
 }
 
-export const txRequest = async (url: string, body: any) => {
+export const txRequest = async (url: string, body: any, customCookie?: string) => {
+  const activeCookie = customCookie || (await getMusicCookie('qq')) || undefined;
+  
+  const headers: Record<string, string> = { 
+    ...txHeaders, 
+    'Content-Type': 'application/json' 
+  };
+  if (activeCookie) {
+    headers['Cookie'] = activeCookie;
+  }
+
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { ...txHeaders, 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000)
     })
