@@ -13,7 +13,6 @@ import {
 } from '@/lib/music/native_tx';
 import { resolveBilibiliUrl } from '@/lib/music/bilibili';
 import { cookies } from 'next/headers';
-import { getKV } from '@/lib/kv';
 
 /**
  * POST /api/music/resolve-url
@@ -23,10 +22,6 @@ import { getKV } from '@/lib/kv';
  *   - musicId:  platform-prefixed id (wy-<id>, qq-<songmid>, bili-<bvid>)
  *
  * Returns: { url, lyric, source }
- *
- * - 网易云分支：保持现有实现不变（原生 fetch，无 SDK 依赖）
- * - QQ 分支：verbatim port of VoiceHub resolve-url.post.ts (huibq + music.3e0.cn + SDK + 官方 vkey)
- * - B站分支：verbatim port of VoiceHub bilibili/playurl.get.ts (buvid3=0 + client IP 转发)
  */
 const QQ_INVALID_AUDIO_URL_SUFFIX = '/2149972737147268278.mp3';
 
@@ -45,6 +40,13 @@ const QQ_HUIBQ_QUALITY_MAP: Record<string, string> = {
 	hires: 'flac24bit',
 	flac24bit: 'flac24bit',
 };
+
+// 【修复兼容性】兼容 Cloudflare Workers / Edge 运行时的超时 Signal 辅助函数
+function createTimeoutSignal(ms: number): AbortSignal {
+	const controller = new AbortController();
+	setTimeout(() => controller.abort(), ms);
+	return controller.signal;
+}
 
 function normalizeHuibqQuality(quality?: string): string {
 	const key = String(quality ?? '8').toLowerCase();
@@ -74,7 +76,7 @@ async function resolveTxWithHuibq(
 			'X-Request-Key': 'share-v3',
 			'User-Agent': 'lx-music-desktop/2.11.0',
 		},
-		signal: AbortSignal.timeout(5000),
+		signal: createTimeoutSignal(5000),
 	});
 	if (!response.ok) throw new Error(`Huibq 返回 ${response.status}`);
 	const data = (await response.json()) as {
@@ -100,7 +102,7 @@ async function resolveTxWithDreamMeting(songmid: string): Promise<string> {
 			'User-Agent':
 				'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 		},
-		signal: AbortSignal.timeout(5000),
+		signal: createTimeoutSignal(5000),
 	});
 	const location = response.headers.get('location');
 	if (location) return upgradeTxAudioUrl(location);
@@ -136,28 +138,16 @@ export async function POST(req: Request) {
 			detectedPlatform = 'bilibili';
 		}
 
-		// 优先从 Cloudflare KV 中通过 NETEASE_COOKIE / TENCENT_COOKIE 读取
-		let neteaseCookie = '';
-		let qqCookie = '';
-
-		try {
-			const kv = await getKV();
-			neteaseCookie = (await kv.get<string>('NETEASE_COOKIE')) || '';
-			qqCookie = (await kv.get<string>('TENCENT_COOKIE')) || '';
-		} catch (err) {
-			console.warn('[resolve-url] 从 KV 读取 Cookie 失败:', err);
-		}
-
-		// 如果 KV 中没有，回退到浏览器 Cookie 读取
-		if (!neteaseCookie || !qqCookie) {
-			const cookieStore = await cookies();
-			if (!neteaseCookie) {
-				neteaseCookie = cookieStore.get('music_cookie_netease')?.value || '';
-			}
-			if (!qqCookie) {
-				qqCookie = cookieStore.get('music_cookie_qq')?.value || '';
-			}
-		}
+		// Read saved music platform cookies (from QR login or fallback to env TENCENT_COOKIE/NETEASE_COOKIE)
+		const cookieStore = await cookies();
+		const neteaseCookie =
+			cookieStore.get('music_cookie_netease')?.value ||
+			process.env.NETEASE_COOKIE ||
+			'';
+		const qqCookie =
+			cookieStore.get('music_cookie_qq')?.value ||
+			process.env.TENCENT_COOKIE ||
+			'';
 
 		let url: string | null = null;
 		let lyric: string | null = null;
@@ -175,7 +165,7 @@ export async function POST(req: Request) {
 			const mediaId = playableInfo.strMediaMid;
 			const errors: string[] = [];
 
-			// Resolver chain (verbatim VoiceHub resolve-url.post.ts + SDK/官方回退):
+			// Resolver chain:
 			// 1. huibq (lx-music-api)  2. music.3e0.cn  3. qq-music-api SDK  4. QQ 官方 vkey
 			const resolvers: Array<{
 				name: string;
@@ -275,7 +265,6 @@ export async function POST(req: Request) {
 			}
 			source = 'qq';
 		} else if (detectedPlatform === 'bilibili') {
-			// 客户端 IP 转发，分配最快 CDN 节点（verbatim VoiceHub）
 			const forwardedFor = req.headers.get('x-forwarded-for');
 			const forwardedForStr = forwardedFor
 				? forwardedFor.split(',')[0].trim()
@@ -284,7 +273,6 @@ export async function POST(req: Request) {
 				forwardedForStr || req.headers.get('x-real-ip') || '';
 			const r = await resolveBilibiliUrl(rawId, undefined, clientIp);
 			url = r.url;
-			// Bilibili has no LRC
 			source = 'bilibili';
 		} else {
 			return fail(`不支持的平台: ${detectedPlatform}`, 400);
