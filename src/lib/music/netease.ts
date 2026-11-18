@@ -6,6 +6,7 @@
  */
 
 import { createHash, createCipheriv } from 'node:crypto';
+import { getMusicCookie } from '@/lib/kv';
 
 // ============================================================================
 // EAPI 加密（与原版一致）
@@ -281,9 +282,12 @@ export async function resolveNetEaseUrl(
 	songId: number | string,
 	loginCookie?: string
 ): Promise<string> {
+	// 优先使用传入的 cookie，如果没有则自动从 KV / 环境变量中获取
+	const activeCookie = loginCookie || (await getMusicCookie('netease')) || undefined;
+
 	// 1. 登录 Cookie → 官方 enhance（可解析 VIP）
-	if (loginCookie) {
-		const u = await tryEnhanceUrl(songId, loginCookie);
+	if (activeCookie) {
+		const u = await tryEnhanceUrl(songId, activeCookie);
 		if (u) return u;
 	}
 	// 2. Meting 镜像
