@@ -37,3 +37,16 @@ id = "18c8f169a4fb48a7ae5ffca971d95ca4"
 #   npx wrangler secret put ADMIN_SECRET
 [vars]
 # ADMIN_SECRET = ""  # 不要写在这里，用 secret 命令设置
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+[observability.issue_detection]
+enabled = false
