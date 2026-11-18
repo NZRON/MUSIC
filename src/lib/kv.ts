@@ -7,7 +7,7 @@
  * 在本地开发环境下（无 KV 绑定），使用内存 Map 作为回退（仅用于开发测试，
  * 重启后丢失数据）。
  *
- * 用途：保存播放器配置 + passkey 凭证 + 临时 challenge + 音乐 Cookie。
+ * 用途：保存播放器配置 + passkey 凭证 + 临时 challenge。
  */
 
 interface KVLike {
@@ -100,45 +100,4 @@ export async function getKV(): Promise<KVLike> {
 export async function isCloudflareKV(): Promise<boolean> {
 	const kv = await getKV();
 	return kv !== memoryKV;
-}
-
-// ==========================================
-// 扩展：音乐 Cookie 专属获取与自动同步
-// ==========================================
-
-export const KV_COOKIE_KEYS = {
-	netease: "music:cookie:netease",
-	qq: "music:cookie:qq",
-} as const;
-
-/**
- * 获取音乐 Cookie：
- * 1. 优先从 KV (`env.KV`) 中读取。
- * 2. 如果 KV 中没有，但环境变量（NETEASE_COOKIE / QQ_COOKIE）配置了，则自动写入 KV 并返回。
- */
-export async function getMusicCookie(platform: 'netease' | 'qq'): Promise<string | null> {
-	const kv = await getKV();
-	const kvKey = KV_COOKIE_KEYS[platform];
-	const envKey = platform === 'netease' ? 'NETEASE_COOKIE' : 'QQ_COOKIE';
-
-	try {
-		const val = await kv.get<string>(kvKey);
-		if (val && typeof val === 'string' && val.trim() !== '') {
-			return val;
-		}
-	} catch (err) {
-		console.error(`Failed to get ${platform} cookie from KV:`, err);
-	}
-
-	const envCookie = process.env[envKey];
-	if (envCookie && envCookie.trim() !== '') {
-		try {
-			await kv.put(kvKey, envCookie);
-		} catch (err) {
-			console.error(`Failed to sync ${platform} cookie to KV:`, err);
-		}
-		return envCookie;
-	}
-
-	return null;
 }
