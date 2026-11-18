@@ -112,11 +112,15 @@ async function eapiPost(
 ): Promise<Response> {
 	const { params } = eapi(path, payload);
 	const body = new URLSearchParams({ params }).toString();
+	
+	// 【修改】如果未传入 cookie，尝试从环境变量 NETEASE_COOKIE 兜底
+	const activeCookie = cookie || process.env.NETEASE_COOKIE;
+
 	return fetch(`https://music.163.com${path}`, {
 		method: 'POST',
 		headers: headers({
 			'Content-Type': 'application/x-www-form-urlencoded',
-			...(cookie ? { Cookie: cookie } : {}),
+			...(activeCookie ? { Cookie: activeCookie } : {}),
 		}),
 		body,
 		signal: AbortSignal.timeout(10000),
@@ -281,9 +285,12 @@ export async function resolveNetEaseUrl(
 	songId: number | string,
 	loginCookie?: string
 ): Promise<string> {
+	// 【修改】如果未传入 loginCookie，自动使用环境变量 NETEASE_COOKIE 兜底
+	const activeCookie = loginCookie || process.env.NETEASE_COOKIE;
+
 	// 1. 登录 Cookie → 官方 enhance（可解析 VIP）
-	if (loginCookie) {
-		const u = await tryEnhanceUrl(songId, loginCookie);
+	if (activeCookie) {
+		const u = await tryEnhanceUrl(songId, activeCookie);
 		if (u) return u;
 	}
 	// 2. Meting 镜像
@@ -297,7 +304,7 @@ export async function resolveNetEaseUrl(
 	if (outer) return outer;
 
 	throw new Error(
-		`网易云音乐无法解析播放链接 (songId=${songId})，可能为 VIP 或版权受限，请扫码登录网易云后重试`
+		`网易云音乐无法解析播放链接 (songId=${songId})，可能为 VIP 或版权受限，请在环境变量配置 NETEASE_COOKIE 或扫码登录后重试`
 	);
 }
 
