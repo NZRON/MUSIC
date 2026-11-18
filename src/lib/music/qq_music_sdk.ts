@@ -98,7 +98,9 @@ const serializeCookieObject = (cookieObject: Record<string, string>) => {
 };
 
 export const normalizeQqCookie = (cookie?: string) => {
-	const cookieObject = parseCookieObject(cookie);
+	// 【修改】如果传入的 cookie 为空，尝试从环境变量 TENCENT_COOKIE 兜底
+	const activeCookie = cookie || process.env.TENCENT_COOKIE;
+	const cookieObject = parseCookieObject(activeCookie);
 	const fallbackKey =
 		cookieObject.qm_keyst ||
 		cookieObject.music_key ||
@@ -448,7 +450,7 @@ export const resolveQqOfficialPlayUrl = async ({
 		throw new Error(
 			`QQ 官方接口未返回播放链接：filename=${filename}, result=${resultCode}, subcode=${subcode}, mid=${mid}, purl=${Boolean(
 				info?.purl
-			)}, vkey=${Boolean(info?.vkey)}${tips}`
+			)}, vkey=${Boolean(info?.vkey)}${tips}，请检查环境变量 TENCENT_COOKIE 是否有效`
 		);
 	}
 
@@ -498,7 +500,7 @@ export const resolveQqSdkPlayUrl = async (
 						  }`
 						: 'missing'
 			  }）`
-			: '（未传 Cookie）';
+			: '（未传 Cookie 且未配置 TENCENT_COOKIE 环境变量）';
 		throw new Error(`qq-music-api 未返回播放链接${reason}${authHint}`);
 	}
 
@@ -937,7 +939,6 @@ const _desBlock = (inp: Buffer, key: number[][]): Buffer => {
 	return _fp(s0, s1);
 };
 
-// 预计算 QRC_KEY 的密钥调度，避免每次解密重复计算
 const QRC_DES_KEYS = {
 	k1: _ks(QRC_KEY.slice(16, 24), 0),
 	k2: _ks(QRC_KEY.slice(8, 16), 1),
@@ -978,12 +979,6 @@ const tryDecryptQrc = (hex: string | undefined): string | undefined => {
 	}
 };
 
-// ─── QQ 音乐原生歌词接口（支持 QRC 逐字）────────────────────────────────────
-
-/**
- * 调用 music.musichallSong.PlayLyricInfo/GetPlayLyricInfo 获取 QRC 歌词。
- * 参考 SPlayer-Next electron/main/apis/qqmusic/modules/lyric.ts
- */
 export const resolveQqNativeLyric = async ({
 	songId,
 	name = '',
@@ -1029,7 +1024,8 @@ export const resolveQqNativeLyric = async ({
 		},
 	});
 
-	const normalizedCookie = cookie ? normalizeQqCookie(cookie) : '';
+	// 【修改】自动利用 normalizeQqCookie 内部的环境变量 TENCENT_COOKIE 兜底
+	const normalizedCookie = normalizeQqCookie(cookie);
 
 	const doRequest = async (param: Record<string, unknown>) => {
 		const body = buildBody(param);
@@ -1039,7 +1035,6 @@ export const resolveQqNativeLyric = async ({
 		};
 		if (normalizedCookie) headers['Cookie'] = normalizedCookie;
 
-		// 优先签名请求，稳定性更好；失败回退普通请求
 		try {
 			const sign = await zzcSign(JSON.stringify(body));
 			const response = await fetch(
@@ -1083,7 +1078,6 @@ export const resolveQqNativeLyric = async ({
 		roma?: string;
 	} = {};
 
-	// qrc_t 为非零数字时 lyric 字段是 QRC，否则是 LRC
 	const mainDecrypted = tryDecryptQrc(data.lyric);
 	if (mainDecrypted) {
 		if (typeof data.qrc_t === 'number' && data.qrc_t !== 0) {
@@ -1093,7 +1087,6 @@ export const resolveQqNativeLyric = async ({
 		}
 	}
 
-	// 有 QRC 但缺 LRC 时补一次请求（翻译对齐需要 LRC 时间戳）
 	if (result.qrc && !result.lrc) {
 		try {
 			const lrcResp = await doRequest({ ...baseParam, qrc: 0, qrc_t: 0 });
