@@ -34,7 +34,7 @@ const QQ_AUTH_COOKIE_KEYS = ['qqmusic_key', 'qm_keyst', 'music_key'];
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
 const QQ_MUSICS_URL = 'https://u.y.qq.com/cgi-bin/musics.fcg';
 const QQ_PLAY_GUID = '1429839143';
-// 注意：g_tk 通常由 skey 计算，这里使用已知可用值；换号后若普通请求失败，需改为动态计算
+
 const QQ_COMMON_QUERY = {
 	g_tk: '1124214810',
 	hostUin: '0',
@@ -44,6 +44,7 @@ const QQ_COMMON_QUERY = {
 	platform: 'yqq.json',
 	needNewCode: '0',
 };
+
 const QQ_OFFICIAL_HEADERS = {
 	'User-Agent':
 		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -115,7 +116,6 @@ const serializeCookieObject = (cookieObject: Record<string, string>) => {
 
 export const normalizeQqCookie = (cookie?: string) => {
 	const cookieObject = parseCookieObject(cookie);
-	// 不覆盖调用方已有的 qqmusic_key，仅在缺失时用其它 key 补齐
 	const authKey =
 		cookieObject.qqmusic_key ||
 		cookieObject.qm_keyst ||
@@ -167,11 +167,9 @@ const decodeMaybeBase64 = (value: unknown) => {
 
 	try {
 		const decoded = Buffer.from(normalizedValue, 'base64').toString();
-		// 含控制字符说明不是 base64 文本
 		if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/.test(decoded)) {
 			return value;
 		}
-		// 仅当解码后带换行/中文/方括号（LRC/QRC 特征）时才认为是真实文本
 		if (!/[\r\n\[\]\u4e00-\u9fa5]/.test(decoded)) {
 			return value;
 		}
@@ -256,7 +254,6 @@ const pickPlayableDomain = (sip: unknown) => {
 	const urls = sip.filter(
 		(item) => typeof item === 'string' && item.length > 0
 	);
-	// 排除 http://ws.xxx 这类旧域名，优先 https
 	return (
 		urls.find((url) => !url.startsWith('http://ws.')) ||
 		urls.find((url) => url.startsWith('https://')) ||
@@ -315,7 +312,6 @@ const requestQqOfficialVkey = async (
 		return await response.json();
 	}
 
-	// 普通请求：POST form，避免 data 过长导致 URL 被拒绝
 	const response = await fetch(QQ_MUSICU_URL, {
 		method: 'POST',
 		headers,
@@ -400,7 +396,6 @@ export const resolveQqOfficialPlayUrl = async ({
 	cookie?: string;
 	mediaId?: string;
 }) => {
-	// 如果没有传 cookie，自动从 KV 中获取
 	const activeCookie = cookie || (await getMusicCookie('qq')) || undefined;
 	const normalizedCookie = normalizeQqCookie(activeCookie);
 	const cookieObject = parseCookieObject(normalizedCookie);
@@ -633,9 +628,6 @@ export const searchQqMusic = async ({
 };
 
 // ─── QRC 解密 ─────────────────────────────────────────────────────────────────
-// 移植自 SPlayer-Next electron/main/apis/qqmusic/core/tripledes.ts + qrc.ts
-// 原始来源: LDDC 项目 https://github.com/chenmozhijin/LDDC
-
 const QRC_KEY = Buffer.from('!@#)(*$%123ZXC!@!@#)(NHL', 'utf8');
 
 const SBOX: number[][] = [
@@ -685,7 +677,6 @@ const SBOX: number[][] = [
 ];
 
 const _bn = (a: Buffer, b: number, c: number): number => {
-	// Math.floor(b / 32) * 4 + 3 - Math.floor((b % 32) / 8)
 	const bi = ((b >> 5) << 2) + 3 - ((b & 31) >> 3);
 	return ((a[bi] >> (7 - (b & 7))) & 1) << c;
 };
@@ -973,7 +964,6 @@ const _desBlock = (inp: Buffer, key: number[][]): Buffer => {
 	return _fp(s0, s1);
 };
 
-// 预计算 QRC_KEY 的密钥调度，避免每次解密重复计算
 const QRC_DES_KEYS = {
 	k1: _ks(QRC_KEY.subarray(16, 24), 0),
 	k2: _ks(QRC_KEY.subarray(8, 16), 1),
@@ -997,7 +987,7 @@ const decryptQrc = (encryptedHex: string): string => {
 		try {
 			return decompress(decrypted).toString('utf8');
 		} catch {
-			/* 继续尝试下一种解压方式 */
+			/* 继续尝试 */
 		}
 	}
 	const raw = decrypted.toString('utf8');
@@ -1014,12 +1004,6 @@ const tryDecryptQrc = (hex: string | undefined): string | undefined => {
 	}
 };
 
-// ─── QQ 音乐原生歌词接口（支持 QRC 逐字）────────────────────────────────────
-
-/**
- * 调用 music.musichallSong.PlayLyricInfo/GetPlayLyricInfo 获取 QRC 歌词。
- * 参考 SPlayer-Next electron/main/apis/qqmusic/modules/lyric.ts
- */
 export const resolveQqNativeLyric = async ({
 	songId,
 	name = '',
@@ -1078,7 +1062,6 @@ export const resolveQqNativeLyric = async ({
 		};
 		if (normalizedCookie) jsonHeaders.Cookie = normalizedCookie;
 
-		// 优先签名请求，稳定性更好；失败回退 form POST
 		try {
 			const sign = await zzcSign(JSON.stringify(body));
 			const response = await fetch(
@@ -1094,10 +1077,7 @@ export const resolveQqNativeLyric = async ({
 				throw new Error(`QQ lyric signed HTTP ${response.status}`);
 			return await response.json();
 		} catch (signedErr) {
-			console.warn(
-				'[qq_music_sdk] QRC 签名请求失败，回退到 form 请求:',
-				signedErr
-			);
+			console.warn('[qq_music_sdk] QRC 签名请求失败，回退到 form 请求:', signedErr);
 			const formHeaders: Record<string, string> = {
 				...txHeaders,
 				'Content-Type': 'application/x-www-form-urlencoded',
@@ -1128,7 +1108,6 @@ export const resolveQqNativeLyric = async ({
 		roma?: string;
 	} = {};
 
-	// qrc_t 非零时 lyric 字段是 QRC，否则是 LRC（接口可能返回字符串数字）
 	const qrcT = Number(data.qrc_t);
 	const mainDecrypted = tryDecryptQrc(data.lyric);
 	if (mainDecrypted) {
@@ -1139,7 +1118,6 @@ export const resolveQqNativeLyric = async ({
 		}
 	}
 
-	// 有 QRC 但缺 LRC 时补一次请求（翻译对齐需要 LRC 时间戳）
 	if (result.qrc && !result.lrc) {
 		try {
 			const lrcResp = await doRequest({ ...baseParam, qrc: 0, qrc_t: 0 });
@@ -1157,7 +1135,6 @@ export const resolveQqNativeLyric = async ({
 	return result;
 };
 
-// 官方播放链接解析
 export const resolveQqOfficialPlayUrl = async ({
 	songmid,
 	quality,
@@ -1231,10 +1208,7 @@ export const resolveQqOfficialPlayUrl = async ({
 			url = signedResult.url || url;
 			info = signedResult.info || info;
 		} catch (signedErr) {
-			console.error(
-				'[qq_music_sdk] 签名请求也失败，保留已获取的诊断信息:',
-				signedErr
-			);
+			console.error('[qq_music_sdk] 签名请求也失败:', signedErr);
 		}
 	}
 
