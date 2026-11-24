@@ -86,7 +86,9 @@ const serializeCookieObject = (cookieObject: Record<string, string>) => {
 		.join('; ');
 };
 export const normalizeQqCookie = (cookie?: string) => {
-	const cookieObject = parseCookieObject(cookie);
+	// 优先使用调用方显式传入的 cookie，否则回退到环境变量 TENCENT_COOKIE
+	const source = cookie || process.env.TENCENT_COOKIE || '';
+	const cookieObject = parseCookieObject(source);
 	const fallbackKey =
 		cookieObject.qm_keyst ||
 		cookieObject.music_key ||
@@ -941,7 +943,9 @@ export const resolveQqNativeLyric = async ({
 			param,
 		},
 	});
-	const normalizedCookie = cookie ? normalizeQqCookie(cookie) : '';
+	// 不再用 `cookie ?` 判断，统一交给 normalizeQqCookie 处理，
+	// 这样未显式传 cookie 时也会自动回退到环境变量 TENCENT_COOKIE
+	const normalizedCookie = normalizeQqCookie(cookie);
 	const doRequest = async (param: Record<string, unknown>) => {
 		const body = buildBody(param);
 		const headers: Record<string, string> = {
