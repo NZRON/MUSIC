@@ -1,4 +1,5 @@
 import { ok, fail, handleError, readBody } from '@/lib/api';
+import { getEnvVar, syncEnvCookiesToKV } from '@/lib/kv';
 import { cookies } from 'next/headers';
 export async function POST(req: Request) {
 	try {
@@ -26,13 +27,21 @@ export async function POST(req: Request) {
 }
 export async function GET(req: Request) {
 	try {
+		await syncEnvCookiesToKV();
 		const url = new URL(req.url);
 		const platform = url.searchParams.get('platform') ?? '';
 		if (!['netease', 'qq'].includes(platform))
 			return fail('不支持的平台', 400);
 		const cookieName = `music_cookie_${platform}`;
 		const store = await cookies();
-		const cookie = store.get(cookieName)?.value || null;
+		let cookie = store.get(cookieName)?.value || null;
+		if (!cookie) {
+			if (platform === 'netease') {
+				cookie = (await getEnvVar('NETEASE_COOKIE')) || null;
+			} else if (platform === 'qq') {
+				cookie = (await getEnvVar('TENCENT_COOKIE')) || null;
+			}
+		}
 		return ok({ platform, cookie, hasCookie: !!cookie });
 	} catch (err) {
 		return handleError(err);
