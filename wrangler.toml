@@ -1,0 +1,27 @@
+name = "music"
+compatibility_date = "2026-11-11"
+compatibility_flags = ["nodejs_compat"]
+
+main = ".open-next/worker.js"
+
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+[[kv_namespaces]]
+binding = "KV"
+id = "18c8f169a4fb48a7ae5ffca971d95ca4"
+
+[vars]
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+[observability.issue_detection]
+enabled = false
